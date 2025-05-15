@@ -4,90 +4,153 @@ import dash_cytoscape as cyto
 from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
+from collections import Counter
+import os
 
-# Sample Data: Nodes and Edges for a PPI Network
-nodes = [
-    {'data': {'id': 'Gene1', 'label': 'Gene1'}},
-    {'data': {'id': 'Gene2', 'label': 'Gene2'}},
-    {'data': {'id': 'Gene3', 'label': 'Gene3'}},
-    {'data': {'id': 'Gene4', 'label': 'Gene4'}}
-]
+# === Load graph data from a TSV file ===
+def parse_ppi_graph(path):
 
-edges = [
-    {'data': {'source': 'Gene1', 'target': 'Gene2'}},
-    {'data': {'source': 'Gene2', 'target': 'Gene3'}},
-    {'data': {'source': 'Gene3', 'target': 'Gene4'}},
-    {'data': {'source': 'Gene1', 'target': 'Gene4'}}
-]
+    df = pd.read_csv(path, sep='\t', header=None, names=['source', 'interaction', 'target'])
 
-# Sample Data: Metabolic Pathway Activities
-df_pathways = pd.DataFrame({
-    'Pathway': ['Glycolysis', 'Oxidative Phosphorylation', 'Cholesterol Metabolism'],
-    'Activity': [0.8, 0.5, 0.6]
-})
+    # Count node degrees
+    node_counts = Counter(df['source'].tolist() + df['target'].tolist())
+    top_nodes = set([node for node, _ in node_counts.most_common(5)])
+
+
+    edges = [{'data': {'source': row['source'], 'target': row['target']}} for _, row in df.iterrows()]
+    nodes = []
+    for node in set(df['source']).union(set(df['target'])):
+        if node in top_nodes:
+            style = {
+                'background-color': 'red',
+                'width': 40,
+                'height': 40
+            }
+        else:
+            style = {
+                'width': 20,
+                'height': 20
+            }
+        
+        nodes.append({
+            'data': {'id': node, 'label': node},
+            'style': style
+        })
+
+    return nodes, edges
+
+
+# === Function to parse pathway activity TSV file ===
+def parse_pathways(path):
+    df = pd.read_csv(path, sep='\t', header=None, names=['Pathway', 'Activity'])
+    return df
+
+
+# Preload graphs
+
+datasets = {
+    'Breast Cancer': {
+        'graph': parse_ppi_graph('graph_BRC.tsv'),
+        'pathway': parse_pathways('pathways_BRC.tsv')
+    },
+    'Ovarian Cancer': {
+        'graph': parse_ppi_graph('graph_OV.tsv'),
+        'pathway': parse_pathways('pathways_OV.tsv')
+    },
+    'Enometrial Cancer': {
+        'graph': parse_ppi_graph('graph_EC.tsv'),
+        'pathway': parse_pathways('pathways_EC.tsv')
+    }
+}
+
+
+
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
 server = app.server
 
-# Define the layout of the application
+
+# Layout
 app.layout = html.Div([
     html.H1("Cancer-specific PPI Networks & Metabolic Pathway Activities"),
 
     html.Div([
-        # Panel for PPI Network Visualization
-        html.Div([
-            html.H2("PPI Network Visualization"),
-            cyto.Cytoscape(
-                id='cytoscape-graph',
-                elements=nodes + edges,
-                layout={'name': 'cose'},
-                style={'width': '100%', 'height': '400px'}
-            )
-        ], style={'width': '48%', 'display': 'inline-block'}),
-
-        # Panel for Metabolic Pathway Activity
-        html.Div([
-            html.H2("Metabolic Pathway Activities"),
-            dcc.Graph(
-                id='pathway-activity-graph',
-                figure=px.bar(df_pathways, x='Pathway', y='Activity',
-                              title="Pathway Activity Scores",
-                              labels={"Activity": "Activity Score"})
-            )
-        ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top'})
-    ]),
-
-    # Interactive filter controls
-    html.Div([
-        html.H3("Network Filter Options"),
+        html.Label("Select Dataset"),
         dcc.Dropdown(
-            id='filter-dropdown',
-            options=[
-                {'label': 'Show All', 'value': 'all'},
-                {'label': 'Show only interactions involving Gene1', 'value': 'gene1'}
-            ],
-            value='all'
+            id='dataset-selector',
+            options=[{'label': name, 'value': name} for name in datasets.keys()],
+            value=next(iter(datasets))  # Default to the first graph
         )
-    ], style={'width': '50%', 'margin': '20px auto'})
-])
+    ], style={'width': '50%', 'margin': 'auto'}),
 
-# Callback to update the network graph based on dropdown selection
-@app.callback(
-    Output('cytoscape-graph', 'elements'),
-    Input('filter-dropdown', 'value')
+    html.Div([
+        cyto.Cytoscape(
+            id='cytoscape-network',
+            layout={'name': 'cose'},
+            style={'width': '100%', 'height': '600px','border': '2px solid #ddd','borderRadius': '8px'},
+            elements=[],
+            stylesheet=[
+                {'selector': 'node', 'style': {'label': 'data(label)'}},
+                # {'selector': '.top-node', 'style': {'background-color': 'red'}}
+            ]
+        )
+    ], style={'width': '100%', 'margin': '20px 0'}),
+
+    html.Div([
+        html.H2("Metabolic Pathway Activities"),
+        dcc.Graph(
+        id='pathway-activity-graph',
+        figure=px.bar(
+            pd.DataFrame({
+                "Pathway": [],
+                "Activity": pd.Series([], dtype="int")
+            }),
+            x='Pathway',
+            y='Activity',
+            title="Pathway Activity Scores",
+            labels={"Activity": "Activity Score"}
+            ).update_layout(
+                paper_bgcolor='#ffefd5',  
+                # plot_bgcolor='rgba(0,0,0,0)',  # transparent plot area
+                font=dict(color='#333'),  # text color
+                xaxis=dict(
+                    showgrid=True,
+                    gridcolor='rgba(200, 200, 200, 0.3)',  # subtle grid lines
+                    zeroline=False
+                ),
+                yaxis=dict(
+                    showgrid=True,
+                    gridcolor='rgba(200, 200, 200, 0.3)',
+                    zeroline=False
+                )
+            )   
+        )
+
+    ])
+],
+style={
+    'background': 'linear-gradient(to bottom right, #ffefd5 30%, #f0f4f8 100%)',
+    'height': '100vh',
+    'margin': 0,
+    'padding': '20px',
+    'fontFamily': 'Arial, sans-serif'
+}
+
 )
-def update_network(selected_filter):
-    if selected_filter == 'all':
-        return nodes + edges
-    elif selected_filter == 'gene1':
-        # Filter nodes and edges to only include those related to Gene1
-        filtered_nodes = [node for node in nodes if node['data']['id'] == 'Gene1']
-        filtered_edges = [edge for edge in edges 
-                          if edge['data']['source'] == 'Gene1' or edge['data']['target'] == 'Gene1']
-        return filtered_nodes + filtered_edges
-    else:
-        return nodes + edges
 
+# Callback
+@app.callback(
+    [Output('cytoscape-network', 'elements'),
+     Output('pathway-activity-graph', 'figure')],
+    [Input('dataset-selector', 'value')]
+)
+def update_content(dataset_name):
+    nodes, edges = datasets[dataset_name]['graph']
+    df_pathways = datasets[dataset_name]['pathway']
+    fig = px.bar(df_pathways, x='Pathway', y='Activity', title=f'{dataset_name} Pathway Activity')
+    return nodes + edges, fig
+
+print("Starting Dash app...")
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
