@@ -2,8 +2,6 @@
 
 This project is a visualization platform designed to explore **single-cell metabolic networks** and **pathway activity scores** across gynecologic and breast cancers. It enables researchers to investigate protein–protein interaction (PPI) networks and corresponding metabolic pathway activity levels in an interactive dashboard.
 
-Developed as part of a computational biology project inspired by the research paper [_A single-cell network approach to decode metabolic regulation in gynecologic and breast cancers_](https://www.nature.com/articles/s41540-025-00506-0).
-
 ---
 
 ## Features
